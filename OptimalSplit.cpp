@@ -8,14 +8,16 @@ f=|s1−s2|+|s2−s3|+|s1−s3|
 Also calculate the number of ways of splitting the tree. Two ways are considered different if different sets of edges is removed.
 */
 #include <iostream>
-#include <vector>
-#include <cstdio>
-#include <sstream>
 #include <memory>
+#include <vector>
 #include <list>
+#include <iterator>
 #include <algorithm>
-#include <stack>
 #include <fstream>
+#include <sstream>
+#include <array>
+#include <cmath>
+#include <set>
 
 using namespace std;
 
@@ -24,10 +26,15 @@ class Node {
         Node(int i) : info(i) { }
         int info;
         int totalChildren = 0;
+        bool disabled = false;
         shared_ptr<Node> parent;
         list<shared_ptr<Node>> children;
         friend ostream& operator << (ostream& os, const Node& node) {
-            os << "id: " << node.info << " tc: " << node.totalChildren << endl;
+            os << "id: " << node.info << " tc: " << node.totalChildren << " children: " << node.children.size() << " child-ids: ";
+            for (auto& child : node.children) {
+                os << child->info << ",";
+            }
+            os << endl;
             return os;
         }
         friend bool operator ==(const Node& node, const Node& other) {
@@ -42,20 +49,19 @@ class Tree {
     public:
         shared_ptr<Node> root;
         void add(int src, int dest) {
-            shared_ptr<Node> parent = make_shared<Node>(src);
-            shared_ptr<Node> child = make_shared<Node>(dest);
+            shared_ptr<Node> parent(new Node(src));
+            shared_ptr<Node> child(new Node(dest));
             
             if (root == nullptr) {
-                parent->totalChildren++;
                 parent->children.push_back(child);
                 root = parent;
+                child->parent = parent;
                 return;
             }
             
             shared_ptr<Node> found = find(root, parent);
             if (found) {
                 child->parent = found;
-                found->totalChildren++;
                 found->children.push_back(child);
             }
         }
@@ -67,34 +73,40 @@ class Tree {
         void print() {
             print(root);
         }
+
+        
     private:
         shared_ptr<Node> find(shared_ptr<Node>& root, const shared_ptr<Node>& toFind) {
             if (root != nullptr) {
+                if (root->info == toFind->info) {
+                    return root;
+                }
                 for(auto& child : root->children) {
-                    if (child == toFind) {
-                        return child;
+                    auto ptr = find(child, toFind);
+                    if (ptr) {
+                        return ptr;
                     }
-                    return find(child, toFind);
                 }
             }
             return nullptr;
         }
-
+        
         void print(shared_ptr<Node> root) {
             if (root != nullptr) {
+                cout << *root << endl;
                 for(auto& child:root->children) {
-                    cout << *child << "," << endl;
                     print(child);
                 }
             }
         }
+        
 
         int calc(shared_ptr<Node> root) {
             if (root != nullptr) {
                 for(auto& child : root->children) {
-                    root->totalChildren = calc(child) + 1;
-                    return root->totalChildren;
+                    root->totalChildren += calc(child);
                 }
+                return root->totalChildren + 1;
             } else {
                 root->totalChildren = 0;
                 return 0;
@@ -102,102 +114,208 @@ class Tree {
         }
 };
 
-int a[3];
-
-int max_children(const list<shared_ptr<Node>>& children) {
-    int max = 0;
-    for (auto& child:children) {
-        if (max < child->totalChildren) {
-            max = child->totalChildren;
+void print(shared_ptr<Node> root) {
+    if (root != nullptr) {
+        cout << *root << endl;
+        for(auto& child:root->children) {
+            print(child);
         }
     }
-    return max;
 }
 
-shared_ptr<Node> max_children_node(const list<shared_ptr<Node>>& children) {
-    int max = 0;
-    shared_ptr<Node> n;
-    for (auto& child:children) {
-        if (max < child->totalChildren) {
-            max = child->totalChildren;
-            n = child;
+vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider);
+vector<array<int, 3>> resp;
+set<array<shared_ptr<Node>, 3>> respNodes;
+
+void divideIntoTwo(shared_ptr<Node>& divNode) {
+    int val1 = divNode->totalChildren + 1;
+    shared_ptr<Node> divNodeParent = divNode->parent;
+
+    auto childList = divNodeParent->children;
+
+    //remove this child node and keep its distance from beginning to add later on at same place.
+    auto it = childList.begin();
+    int dist = 0;
+    for( ; it != childList.end(); ++it) {
+        if ((*it)->info == divNode->info) {
+            (*it)->disabled = true;
+            break;
+        }
+        dist++;
+    }
+        
+    //update all nodes till parent with updated children.
+    auto earstwhileParentPtr(divNodeParent);
+    auto iterToParent = divNodeParent;
+    decltype(iterToParent) iterToRoot = nullptr;
+    while(iterToParent) {
+        iterToParent->totalChildren -= divNode->totalChildren + 1;
+        iterToRoot = iterToParent;
+        iterToParent = iterToParent->parent;
+    }
+
+    //save a copy to detached node.
+    shared_ptr<Node> copyToDetachedNode(divNode);
+
+    //optimally divide the tree into 2 nodes now.
+    int div = (iterToRoot->totalChildren + 1) / 2;
+    auto subdividedNodes = divide(iterToRoot, div, 2);
+    int val2, val3;
+    
+    for(auto& subdividedNode : subdividedNodes) {
+        val2 = subdividedNode->totalChildren + 1;
+        val3 = iterToRoot->totalChildren - subdividedNode->totalChildren;
+        if (val3 == 0) {
+          continue;
+        }
+        array<shared_ptr<Node>, 3> nodeArr{copyToDetachedNode, subdividedNode, iterToRoot};
+        sort(nodeArr.begin(), nodeArr.end());
+        if (respNodes.insert(nodeArr).second == true) {
+            array<int, 3> arr{val1, val2, val3};
+            resp.push_back(arr);
+        }
+        cout << *subdividedNode;
+    }
+    
+    //re-create the tree by attching detached node to its earstwhile parent.
+    iterToParent = earstwhileParentPtr;
+    iterToRoot = nullptr;
+    
+    while(iterToParent) {
+        iterToParent->totalChildren += copyToDetachedNode->totalChildren + 1;
+        iterToRoot = iterToParent;
+        iterToParent = iterToParent->parent;
+    }
+
+    it = childList.begin();
+    
+    for( ; it != childList.end(); ++it) {
+        if ((*it)->info == divNode->info) {
+            (*it)->disabled = false;
+            break;
         }
     }
-    return n;
 }
 
-void findBreakingNode(shared_ptr<Node> parent, int optimum, int& i) {
-    if (parent != nullptr) {
-        if (parent->totalChildren <= optimum) {
-            int reduceChildren;
-            if (parent->children.size() == 1) {
-                reduceChildren = parent->totalChildren;
-            } else {
-                if (parent->totalChildren == optimum) {
-                    reduceChildren = parent->totalChildren + 1;
-                    parent = parent->parent;
-                } else {
-                    reduceChildren = max_children(parent->children);
+vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider) {
+    vector<shared_ptr<Node>> optimalNodes{};
+    bool hasInnerOptimal = false;
+    if (rootPtr && !rootPtr->disabled) {
+        if (rootPtr->totalChildren > sum || (rootPtr->children.size() == 1 && rootPtr->totalChildren >= sum)) {
+            auto it = rootPtr->children.begin();
+              for(auto& child : rootPtr->children) {
+                if (child->totalChildren > sum) {
+                    hasInnerOptimal = true;
+                } 
+                
+                auto&& vec = divide(child, sum, divider);
+                int size = vec.size() + optimalNodes.size();
+                move(vec.begin(), vec.end(), back_inserter(optimalNodes));
+            }
+            //if all children of the node are smaller than the cutoff then include parent too as an optimal subtree.
+            if ((!hasInnerOptimal)) {
+                optimalNodes.push_back(rootPtr);
+                //this point divide the existing tree into more parts.
+                if (divider == 3) {
+                    divideIntoTwo(rootPtr);
                 }
             }
-            auto& curr = parent;
-            while (curr != nullptr) {
-                curr->totalChildren -= reduceChildren;
-                curr = curr->parent;
-            }
-            i = reduceChildren;
+            
+            return optimalNodes;
         } else {
-            auto&& maxNode = max_children_node(parent->children);
-            findBreakingNode(maxNode, optimum, i);
+            //child with cutoff subchildren has reached.
+            optimalNodes.push_back(rootPtr);
+            //this point divide the existing tree into more parts.
+            if (divider == 3) {
+                divideIntoTwo(rootPtr);
+            }
+            return optimalNodes;
         }
     }
+    return optimalNodes;
 }
 
-void findBreakingNode_2(shared_ptr<Node> parent, int optimum, int& i) {
-    stack<shared_ptr<Node>> nodeStack;
-}
+void divideIntoThree(Tree& tree) {
+    int div = (tree.root->totalChildren + 1) / 3;
+    auto nodes = divide(tree.root, div, 3);
 
-int splitTree(const Tree& tree) {
-    int total = tree.root->totalChildren + 1;
-    int optimum = total / 3;
-    int i = 0;
-    auto&& maxNode = max_children_node(tree.root->children);
-    findBreakingNode(maxNode, optimum, a[0]);
-    total = tree.root->totalChildren + 1;
-    optimum = total / 2;
-    maxNode = max_children_node(tree.root->children);
-    findBreakingNode(maxNode, optimum, a[1]);
-    a[2] = tree.root->totalChildren + 1;
+    cout << "optimal possible subtrees" << endl;
+    int id = 0;
+    for(auto& p : resp) {
+        cout << ++id << endl;
+        cout << p[0] << " " << p[1] << " " << p[2] << endl;
+    }
+    id = 0;
+    for(auto& p : respNodes) {
+        cout << ++id << endl;
+        cout << *p[0] << *p[1] << *p[2] << endl;
+    }
+
+    if (resp.size() == 0) {
+        return;
+    }
+
+    //find smallest of these subtrees.
+    auto p = resp[0];
+    int min = abs(p[0]-p[1]) + abs(p[1]-p[2]) + abs(p[2]-p[0]);
+    int count = 0;
+    
+    for(int i = 1; i < resp.size(); ++i) {
+        auto q = resp[i];
+        int curr = abs(q[0]-q[1]) + abs(q[1]-q[2]) + abs(q[2]-q[0]);
+        if(curr <= min) {
+            min = curr;
+        } 
+    }
+    for(int i = 0; i < resp.size(); ++i) {
+        auto q = resp[i];
+        int curr = abs(q[0]-q[1]) + abs(q[1]-q[2]) + abs(q[2]-q[0]);
+        if(curr == min) {
+            count++;
+        } 
+    }
+    cout << "min " << min << " count " << count << endl;
 }
 
 int main() {
-    string nVertices;
+    int nTests;
+    int nEdges;
+    int src, dest;
     stringstream ss;
-    vector<pair<int, int>> edges;
-    ifstream fin;
+    string list;
 
-    fin.open("tree-divide.txt");
-    getline(fin, nVertices);
-    ss << nVertices;
-    int v;
-    ss >> v;
-    for (int i = 0; i < v; ++i) {
-        string line;
-        stringstream ss;
-        getline(fin, line);
-        ss << line;
-        int t1, t2;
-        ss >> t1 >> t2;
-        pair<int,int> p {t1, t2};
-        edges.push_back(p);
-    }
+    fstream fin("a.txt");
+    getline(fin, list);
+    ss << list;
+    ss >> nTests;
+    ss.clear();
 
-    Tree tree;
-    for(auto& edge:edges) {
-        tree.add(edge.first, edge.second);
+    for (int i = 0; i < nTests; i++) {
+        getline(fin, list);
+        ss << list;
+        ss >> nEdges;
+        ss.clear();
+        vector<pair<int, int>> edges;
+
+        for (int j = 0; j < nEdges; j++) {
+            getline(fin, list);
+            ss << list;
+            ss >> src >> dest;
+            ss.clear();
+
+            pair<int,int> p {src, dest};
+            edges.push_back(p);
+        }
+
+        Tree tree;
+        for(auto& edge:edges) {
+            tree.add(edge.first, edge.second);
+        }
+        tree.countChildren();
+        tree.print();
+        divideIntoThree(tree);
+        vector<array<int, 3>>().swap(resp);
+        respNodes.clear();
     }
-    
-    //tree.countChildren();
-    tree.print();
+    return 0;
 }
-
