@@ -25,12 +25,13 @@ class Node {
     public:
         Node(int i) : info(i) { }
         int info;
-        int totalChildren = 0;
-        bool disabled = false;
+        int totalChildren = 0, nextChildren = 0;
+        bool disabled = false, visited = false;
         shared_ptr<Node> parent;
         list<shared_ptr<Node>> children;
         friend ostream& operator << (ostream& os, const Node& node) {
-            os << "id: " << node.info << " tc: " << node.totalChildren << " children: " << node.children.size() << " child-ids: ";
+            os << "id: " << node.info << " visited: " << node.visited << " tc: " << node.totalChildren << " ic: " << node.nextChildren << " children: " 
+            << node.children.size() << " child-ids: ";
             for (auto& child : node.children) {
                 os << child->info << ",";
             }
@@ -105,6 +106,7 @@ class Tree {
             if (root != nullptr) {
                 for(auto& child : root->children) {
                     root->totalChildren += calc(child);
+                    root->nextChildren++;
                 }
                 return root->totalChildren + 1;
             } else {
@@ -125,10 +127,12 @@ void print(shared_ptr<Node> root) {
 
 vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider);
 vector<array<int, 3>> resp;
-set<array<shared_ptr<Node>, 3>> respNodes;
+//set<array<shared_ptr<Node>, 3>> respNodes;
+vector<array<shared_ptr<Node>, 3>> respNodes;
 
 void divideIntoTwo(shared_ptr<Node>& divNode) {
     int val1 = divNode->totalChildren + 1;
+    cout << "handle " << *divNode << endl;
     shared_ptr<Node> divNodeParent = divNode->parent;
 
     auto childList = divNodeParent->children;
@@ -148,6 +152,7 @@ void divideIntoTwo(shared_ptr<Node>& divNode) {
     auto earstwhileParentPtr(divNodeParent);
     auto iterToParent = divNodeParent;
     decltype(iterToParent) iterToRoot = nullptr;
+    divNodeParent->nextChildren--;
     while(iterToParent) {
         iterToParent->totalChildren -= divNode->totalChildren + 1;
         iterToRoot = iterToParent;
@@ -161,7 +166,7 @@ void divideIntoTwo(shared_ptr<Node>& divNode) {
     int div = (iterToRoot->totalChildren + 1) / 2;
     auto subdividedNodes = divide(iterToRoot, div, 2);
     int val2, val3;
-    
+    cout << "subnodes " << endl;
     for(auto& subdividedNode : subdividedNodes) {
         val2 = subdividedNode->totalChildren + 1;
         val3 = iterToRoot->totalChildren - subdividedNode->totalChildren;
@@ -169,12 +174,11 @@ void divideIntoTwo(shared_ptr<Node>& divNode) {
           continue;
         }
         array<shared_ptr<Node>, 3> nodeArr{copyToDetachedNode, subdividedNode, iterToRoot};
-        sort(nodeArr.begin(), nodeArr.end());
-        if (respNodes.insert(nodeArr).second == true) {
-            array<int, 3> arr{val1, val2, val3};
-            resp.push_back(arr);
-        }
+        respNodes.push_back(nodeArr);
+        array<int, 3> arr{val1, val2, val3};
+        resp.push_back(arr);
         cout << *subdividedNode;
+        cout << val1 << " " << val2 << " " << val3 << endl;
     }
     
     //re-create the tree by attching detached node to its earstwhile parent.
@@ -188,26 +192,25 @@ void divideIntoTwo(shared_ptr<Node>& divNode) {
     }
 
     it = childList.begin();
-    
-    for( ; it != childList.end(); ++it) {
-        if ((*it)->info == divNode->info) {
-            (*it)->disabled = false;
-            break;
-        }
-    }
+    (*it)->disabled = false;
+
+    divNodeParent->nextChildren++;
 }
 
 vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider) {
     vector<shared_ptr<Node>> optimalNodes{};
     bool hasInnerOptimal = false;
-    if (rootPtr && !rootPtr->disabled) {
-        if (rootPtr->totalChildren > sum || (rootPtr->children.size() == 1 && rootPtr->totalChildren >= sum)) {
+    if (rootPtr && !rootPtr->disabled && !rootPtr->visited) {
+        if (rootPtr->totalChildren > sum || (rootPtr->nextChildren == 1 && rootPtr->totalChildren >= sum)) {
             auto it = rootPtr->children.begin();
               for(auto& child : rootPtr->children) {
                 if (child->totalChildren > sum) {
                     hasInnerOptimal = true;
                 } 
-                
+                cout << "sum " << sum << " before child " << *child << endl;
+                if (child->visited) {
+                    continue;
+                }
                 auto&& vec = divide(child, sum, divider);
                 int size = vec.size() + optimalNodes.size();
                 move(vec.begin(), vec.end(), back_inserter(optimalNodes));
@@ -218,6 +221,8 @@ vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider)
                 //this point divide the existing tree into more parts.
                 if (divider == 3) {
                     divideIntoTwo(rootPtr);
+                    rootPtr->visited = true;
+                    cout << "mark true here " << *rootPtr << endl;
                 }
             }
             
@@ -228,6 +233,8 @@ vector<shared_ptr<Node>> divide(shared_ptr<Node>& rootPtr, int sum, int divider)
             //this point divide the existing tree into more parts.
             if (divider == 3) {
                 divideIntoTwo(rootPtr);
+                rootPtr->visited = true;
+                cout << "mark true there " << *rootPtr << endl;
             }
             return optimalNodes;
         }
